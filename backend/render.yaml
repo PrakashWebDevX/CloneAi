@@ -1,0 +1,22 @@
+# render.yaml — Deploy backend to Render.com
+# Place this in the root of your /backend folder
+
+services:
+  - type: web
+    name: cloneai-backend
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: CLAUDE_API_KEY
+        sync: false          # Set manually in Render dashboard
+      - key: MONGODB_URI
+        sync: false          # Optional — leave blank for in-memory store
+      - key: FRONTEND_URL
+        sync: false          # Your Vercel frontend URL
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001

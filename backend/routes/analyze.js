@@ -1,67 +1,56 @@
 const express = require('express');
 const router = express.Router();
-const Anthropic = require('@anthropic-ai/sdk');
 
-const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-
-/**
- * POST /api/analyze
- * Body: { text }
- * Returns structured personality JSON profile
- */
 router.post('/', async (req, res) => {
   const { text } = req.body;
-
   if (!text || text.trim().length < 50) {
-    return res.status(400).json({ error: 'Need at least 50 characters of sample text' });
+    return res.status(400).json({ error: 'Need at least 50 characters' });
   }
 
-  const truncated = text.slice(0, 8000); // Cap at 8k chars for API efficiency
+  const prompt = `Analyze this person's writing style. Return ONLY a valid JSON object, no markdown, no explanation.
+
+TEXT:
+${text.slice(0, 8000)}
+
+Return exactly this JSON:
+{
+  "tone": "one of: casual|professional|sarcastic|formal|chaotic|chill|intense",
+  "traits": ["4-6 personality trait words"],
+  "commonWords": ["10-15 frequently used words or slang from the text"],
+  "avgSentenceLength": "one of: short|medium|long|mixed",
+  "punctuationStyle": "one of: minimal|heavy|emoji-heavy|formal|erratic",
+  "capitalizationStyle": "one of: lowercase|normal|SHOUTING|mixed",
+  "personality": "2-3 sentence description of this person's vibe",
+  "sampleResponse": "1-2 sentences exactly how this person would say: how was your day?"
+}`;
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      messages: [{
-        role: 'user',
-        content: `Analyze this person's writing style thoroughly and return ONLY a valid JSON object with no markdown fences, no explanation, nothing else.
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.3, maxOutputTokens: 1000 }
+        })
+      }
+    );
 
-WRITING SAMPLE:
-${truncated}
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error?.message || 'Gemini API error');
+    }
 
-Return exactly this JSON schema:
-{
-  "tone": "one of: casual | professional | sarcastic | formal | chaotic | chill | intense | warm | dry",
-  "traits": ["array of 4-6 specific personality trait words observed in the writing"],
-  "commonWords": ["array of 10-15 frequently used words, phrases, or slang found in the text"],
-  "avgSentenceLength": "one of: short | medium | long | mixed",
-  "punctuationStyle": "one of: minimal | heavy | emoji-heavy | formal | erratic",
-  "capitalizationStyle": "one of: lowercase | normal | SHOUTING | mixed",
-  "personality": "2-3 sentence vivid description of this person's communication vibe and personality",
-  "sampleResponse": "write 1-2 sentences exactly how this person would respond to 'how was your day?'"
-}`
-      }]
-    });
-
-    let raw = response.content[0].text.trim();
-    // Strip any accidental markdown fences
-    raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-
+    const data = await response.json();
+    let raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    raw = raw.replace(/```json|```/g, '').trim();
     const profile = JSON.parse(raw);
-
-    // Validate required fields
-    const required = ['tone', 'traits', 'commonWords', 'avgSentenceLength', 'personality'];
-    for (const field of required) {
-      if (!profile[field]) throw new Error(`Missing field: ${field}`);
-    }
-
     res.json({ profile });
+
   } catch (err) {
-    if (err instanceof SyntaxError) {
-      return res.status(502).json({ error: 'Failed to parse AI response. Try again.' });
-    }
     console.error('Analyze error:', err.message);
-    res.status(502).json({ error: 'Analysis failed: ' + err.message });
+    res.status(502).json({ error: err.message });
   }
 });
 

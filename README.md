@@ -1,4 +1,4 @@
-# 🧠 CloneAI — AI Personality Cloner 
+# 🧠 CloneAI — AI Personality Cloner
 
 > Create a digital AI twin of your personality. Train it on your writing, chat with it in real-time, and watch it talk exactly like you.
 
